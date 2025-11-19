@@ -207,8 +207,8 @@ except Exception:
 
 # ---- Tuning parameters (scanner) --------------------------------------------
 
-SCAN_EVERY_MS = 500  # scanning cadence (ms)
-STABLE_THRESHOLD = 2  # consecutive frames to be "sure"
+SCAN_EVERY_MS = 150  # scanning cadence (ms)
+STABLE_THRESHOLD = 3  # consecutive frames to be "sure"
 MIN_OCR_DIGITS = 10  # Ignore OCR card numbers shorter than this
 MAX_OCR_DIGITS = 24  # Ignore OCR card numbers longer than this
 PIN_DIGITS = 4  # Look for a 4-digit PIN
@@ -238,7 +238,7 @@ class AutoBarcodeApp:
         root.title("Auto 1D Barcode Scanner + REWE / DM / ALDI / LIDL / EDEKA")
 
         # Set default window size - more compact
-        root.geometry("960x720")
+        root.geometry("660x680")
 
         # Camera ----------------------------------------------------------------
 
@@ -256,9 +256,9 @@ class AutoBarcodeApp:
 
         # Best-effort hints
 
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 480)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 640)
-        self.cap.set(cv2.CAP_PROP_FPS, 25)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280 / 2)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720 / 2)
+        self.cap.set(cv2.CAP_PROP_FPS, 60)
         self.cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)
 
         # UI --------------------------------------------------------------------
@@ -416,21 +416,21 @@ class AutoBarcodeApp:
                 self._driver = None
 
         try:
-            chrome_opts = webdriver.ChromeOptions()
-            chrome_opts.add_argument("--start-maximized")
-            chrome_opts.add_argument("--disable-backgrounding-occluded-windows")
-            self._driver = webdriver.Chrome(options=chrome_opts)
-
+            firefox_opts = webdriver.FirefoxOptions()
+            firefox_opts.add_argument("--width=1280")
+            firefox_opts.add_argument("--height=900")
+            self._driver = webdriver.Firefox(options=firefox_opts)
             return self._driver
 
         except Exception:
             self._driver = None
 
         try:
-            firefox_opts = webdriver.FirefoxOptions()
-            firefox_opts.add_argument("--width=1280")
-            firefox_opts.add_argument("--height=900")
-            self._driver = webdriver.Firefox(options=firefox_opts)
+            chrome_opts = webdriver.ChromeOptions()
+            chrome_opts.add_argument("--start-maximized")
+            chrome_opts.add_argument("--disable-backgrounding-occluded-windows")
+            self._driver = webdriver.Chrome(options=chrome_opts)
+
             return self._driver
 
         except Exception:
@@ -608,21 +608,13 @@ class AutoBarcodeApp:
 
             return
 
-        # If a PIN selector exists but no PIN text was captured, make PIN optional:
-        # - Do not block opening the shop.
-        # - Inform the user that they need to enter the PIN manually in the browser.
         if pin_selector and not pin_text:
             self.status.config(
-                text=(
-                    f"PIN not found for {site_name}. Opening page — please enter PIN manually in the site."  # noqa: E501
-                ),
-                foreground="orange",
+                text=f"PIN required for {site_name} but not found. Please rescan.",
+                foreground="red",
             )
-            # Treat as if no pin selector was supplied so `_open_and_fill` will skip filling
-            # the PIN field but still paste the card number.
-            pin_selector_to_use = None
-        else:
-            pin_selector_to_use = pin_selector
+
+            return
 
         # Pass all selectors to the fill function
 
@@ -630,7 +622,7 @@ class AutoBarcodeApp:
             url,
             card_selector,
             code_text,
-            pin_selector_to_use,
+            pin_selector,
             pin_text,
             site_name,
             iframe_selector,  # NEW
