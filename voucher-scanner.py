@@ -31,7 +31,11 @@ from PIL import Image, ImageTk
 
 
 # ---- Camera configuration ------------------------------------------------
-CAMERA_SOURCE = os.environ.get("CAMERA_SOURCE", "http://192.168.178.46:8080/video")
+IP_x = "192.168.1.184"  # "192.168.178.46"
+CAMERA_SOURCE = os.environ.get("CAMERA_SOURCE", f"https://{IP_x}:8080/video")
+
+RES_PHONE_WIDTH = 1280
+RES_PHONE_HEIGHT = 720
 
 
 def create_capture(source: str) -> cv2.VideoCapture:
@@ -211,8 +215,11 @@ class VoucherScannerApp:
 
     def __init__(self, root: tk.Tk, camera_source: str = CAMERA_SOURCE):
         self.root = root
+        self.camera_source = camera_source  # Store for reconnection
         root.title("Voucher Scanner - Picture Mode")
-        root.geometry("1280x1080")
+        geometry_width = round(RES_PHONE_WIDTH + RES_PHONE_WIDTH * 0.1)
+        geometry_height = round(RES_PHONE_HEIGHT + RES_PHONE_HEIGHT * 0.3)
+        root.geometry(f"{geometry_width}x{geometry_height}")
 
         # Camera setup
         self.cap = create_capture(camera_source)
@@ -226,8 +233,8 @@ class VoucherScannerApp:
             sys.exit(1)
 
         # Camera hints
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, RES_PHONE_WIDTH)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, RES_PHONE_HEIGHT)
         self.cap.set(cv2.CAP_PROP_FPS, 20)
         self.cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)
 
@@ -267,6 +274,12 @@ class VoucherScannerApp:
         )
         self.take_picture_btn.pack(side="left", padx=2)
 
+        # Reset Camera button
+        self.reset_camera_btn = ttk.Button(
+            action_frame, text="🔌 Reset Camera", command=self._reset_camera, width=14
+        )
+        self.reset_camera_btn.pack(side="left", padx=2)
+
         # Shop buttons frame
         shop_frame = ttk.LabelFrame(root, text="")
         shop_frame.grid(row=4, column=0, columnspan=4, sticky="w", padx=12, pady=5)
@@ -297,6 +310,42 @@ class VoucherScannerApp:
 
         # Start live video
         self.update_live_video()
+
+    # ==================== Camera Control Methods ====================
+
+    def _reset_camera(self):
+        """Reset/reconnect the camera connection."""
+        self.status.config(text="🔌 Resetting camera...", foreground="orange")
+        self.root.update()
+
+        try:
+            # Release current connection
+            if self.cap:
+                self.cap.release()
+
+            # Reconnect
+            self.cap = create_capture(self.camera_source)
+            if not self.cap.isOpened():
+                messagebox.showerror("Camera Error", "Could not reconnect to camera.")
+                self.status.config(text="❌ Camera connection failed", foreground="red")
+                return
+
+            # Set camera properties again
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, RES_PHONE_WIDTH)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, RES_PHONE_HEIGHT)
+            self.cap.set(cv2.CAP_PROP_FPS, 20)
+            self.cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)
+
+            self.status.config(
+                text="✅ Camera reconnected - Ready to capture", foreground="green"
+            )
+            # Reset picture mode in case we were frozen
+            self.picture_mode = False
+            self.frozen_frame = None
+
+        except Exception as e:
+            messagebox.showerror("Camera Error", f"Failed to reset camera: {e}")
+            self.status.config(text="❌ Camera reset failed", foreground="red")
 
     # ==================== Picture Capture Methods ====================
 
