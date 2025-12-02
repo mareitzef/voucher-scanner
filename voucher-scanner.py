@@ -33,11 +33,16 @@ from pytesseract import Output
 import cv2
 import numpy as np
 from PIL import Image, ImageTk
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
 
 # ---- Camera configuration ------------------------------------------------
-IP_x = "192.168.178.46"  # "192.168.1.184"
-CAMERA_SOURCE = os.environ.get("CAMERA_SOURCE", f"https://{IP_x}:8080/video")
+IP_phone = os.getenv("IP_PHONE")
+# IP_phone = "10.60.142.22"
+
+CAMERA_SOURCE = os.environ.get("CAMERA_SOURCE", f"https://{IP_phone}:8080/video")
 
 RES_PHONE_WIDTH = 1280
 RES_PHONE_HEIGHT = 720
@@ -260,9 +265,14 @@ class VoucherScannerApp:
 
         # Status label
         self.status = ttk.Label(
-            root, text="📹 Live video - Ready to capture", foreground="blue"
+            root, text="📹 Live video - Ready to capture", foreground="blue", anchor="w"
         )
-        self.status.grid(row=1, column=0, columnspan=7, sticky="w", padx=12, pady=5)
+        self.status.grid(row=1, column=0, columnspan=7, sticky="we", padx=12, pady=5)
+        # prevent the status row from expanding vertically when long messages arrive
+        try:
+            root.grid_rowconfigure(1, minsize=24)
+        except Exception:
+            pass
 
         # Controls frame
         controls_frame = ttk.LabelFrame(root, text="")
@@ -270,7 +280,8 @@ class VoucherScannerApp:
 
         ttk.Label(controls_frame, text="Card Number:").pack(side="left")
         self.code = tk.StringVar()
-        ttk.Entry(controls_frame, textvariable=self.code, width=20).pack(
+        # Wider entry for card number
+        ttk.Entry(controls_frame, textvariable=self.code, width=30).pack(
             side="left", padx=(2, 12)
         )
 
@@ -280,40 +291,111 @@ class VoucherScannerApp:
             side="left", padx=(2, 12)
         )
 
-        # Action buttons frame
-        action_frame = ttk.LabelFrame(root, text="")
-        action_frame.grid(row=3, column=0, columnspan=4, sticky="w", padx=12, pady=5)
+        # Start browser hint + button (new row above shops)
+        start_hint = ttk.Label(
+            root, text="Start browser first (open shop tabs if needed)"
+        )
+        start_hint.grid(row=3, column=0, columnspan=4, sticky="w", padx=12, pady=(8, 0))
 
-        # Take Picture button
+        start_frame = ttk.Frame(root)
+        start_frame.grid(
+            row=4, column=0, columnspan=4, sticky="w", padx=12, pady=(0, 6)
+        )
+
+        # Take picture row (take picture button alone)
+        take_hint = ttk.Label(
+            root, text="Take picture (shop auto-selected except ALDI/LIDL)"
+        )
+        take_hint.grid(row=5, column=0, columnspan=4, sticky="w", padx=12, pady=(4, 0))
+
+        take_frame = ttk.Frame(root)
+        take_frame.grid(row=6, column=0, columnspan=4, sticky="w", padx=12, pady=(0, 6))
+
+        # Shop buttons hint (will be placed below start browser)
+        shop_hint = ttk.Label(
+            root, text="Then choose the Shop (choose ALDI or LIDL if ambiguous)"
+        )
+        shop_hint.grid(row=7, column=0, columnspan=4, sticky="w", padx=12, pady=(6, 0))
+
+        # Shop buttons frame (placed below start browser)
+        shop_frame = ttk.LabelFrame(root, text="")
+        shop_frame.grid(row=8, column=0, columnspan=4, sticky="w", padx=12, pady=5)
+
+        # Action area hint
+        action_hint = ttk.Label(
+            root, text="After scan: press 'Fill Selected' to fill the selected shop"
+        )
+        action_hint.grid(
+            row=9, column=0, columnspan=4, sticky="w", padx=12, pady=(6, 0)
+        )
+
+        # Action buttons frame (below shop buttons)
+        action_frame = ttk.LabelFrame(root, text="")
+        action_frame.grid(row=10, column=0, columnspan=4, sticky="w", padx=12, pady=5)
+
+        # Style for selected/pressed buttons
+        self._style = ttk.Style()
+        try:
+            self._style.configure("Selected.TButton", background="#b7ebc6")
+            self._style.configure("Pressed.TButton", background="#d6f0ff")
+            self._style.configure("Ambiguous.TButton", background="#ffd59e")
+        except Exception:
+            pass
+
+        # Action buttons (order will be added to action_frame; start button lives in start_frame)
+        self.start_browser_btn = ttk.Button(
+            start_frame,
+            text="Start Browser",
+            command=lambda: (
+                self._flash_button(self.start_browser_btn),
+                self._manual_open_browser(),
+            ),
+            width=20,
+        )
+        self.start_browser_btn.pack(side="left", padx=2)
+
         self.take_picture_btn = ttk.Button(
-            action_frame, text="📷 Take Picture", command=self._take_picture, width=14
+            take_frame,
+            text="Take Picture",
+            command=lambda: (
+                self._flash_button(self.take_picture_btn),
+                self._take_picture(),
+            ),
+            width=20,
         )
         self.take_picture_btn.pack(side="left", padx=2)
 
-        # Reset Camera button
+        self.fill_selected_btn = ttk.Button(
+            action_frame,
+            text="Fill Selected",
+            command=lambda: (
+                self._flash_button(self.fill_selected_btn),
+                self._fill_selected_shop(),
+            ),
+            width=14,
+        )
+        self.fill_selected_btn.pack(side="left", padx=2)
+
         self.reset_camera_btn = ttk.Button(
-            action_frame, text="🔌 Reset Camera", command=self._reset_camera, width=14
+            action_frame,
+            text="Reset Camera",
+            command=lambda: (
+                self._flash_button(self.reset_camera_btn),
+                self._reset_camera(),
+            ),
+            width=14,
         )
         self.reset_camera_btn.pack(side="left", padx=2)
 
-        # Shop buttons frame
-        shop_frame = ttk.LabelFrame(root, text="")
-        shop_frame.grid(row=4, column=0, columnspan=4, sticky="w", padx=12, pady=5)
-
         self.shop_buttons = []
         for name, config in SHOPS.items():
-            handler = lambda n=name, cfg=config: self._open_shop(
-                n,
-                cfg["url"],
-                cfg["card_selector"],
-                cfg.get("pin_selector"),
-                cfg.get("iframe_selector"),
-            )
-            btn = ttk.Button(
-                shop_frame, text=f"{config['emoji']} {name}", command=handler, width=8
-            )
+            text = f"{name}"
+            btn = ttk.Button(shop_frame, text=text, width=12, style="TButton")
+            btn._orig_text = text
+            btn._shop_name = name
+            # Selecting a shop (does not open browser yet)
+            btn.config(command=lambda n=name, b=btn: self._select_shop(n, b))
             btn.pack(side="left", padx=2)
-            btn.state(["disabled"])
             self.shop_buttons.append(btn)
 
         # State
@@ -326,6 +408,125 @@ class VoucherScannerApp:
 
         # Start live video
         self.update_live_video()
+
+    def _select_shop(self, name, button):
+        """Mark a shop as selected. Visual toggle on the button."""
+        # Deselect previous (remove selected style)
+        try:
+            prev = getattr(self, "selected_shop_button", None)
+            if prev and prev is not button:
+                prev.config(style="TButton")
+        except Exception:
+            pass
+
+        # Toggle selection
+        if getattr(self, "selected_shop", None) == name:
+            # Deselect: clear selection and reset styles for all shop buttons
+            self.selected_shop = None
+            try:
+                for b in self.shop_buttons:
+                    b.config(style="TButton")
+            except Exception:
+                pass
+            self.selected_shop_button = None
+            self.status.config(text="Shop deselected", foreground="blue")
+        else:
+            # Select this shop and set style green; reset others to default
+            self.selected_shop = name
+            self.selected_shop_button = button
+            try:
+                for b in self.shop_buttons:
+                    try:
+                        if getattr(b, "_shop_name", None) == name:
+                            b.config(style="Selected.TButton")
+                        else:
+                            b.config(style="TButton")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            self.status.config(text=f"Selected shop: {name}", foreground="blue")
+
+    def _flash_button(self, button, ms: int = 300):
+        """Temporarily apply Pressed style to a button then revert."""
+        try:
+            orig_style = button.cget("style") if "style" in button.keys() else "TButton"
+            button.config(style="Pressed.TButton")
+            self.root.after(ms, lambda: button.config(style=orig_style))
+        except Exception:
+            pass
+
+    def _fill_selected_shop(self):
+        """Fill the selected shop's form in the browser using captured IDs."""
+        if not getattr(self, "selected_shop", None):
+            messagebox.showinfo("No shop selected", "Please select a shop first.")
+            return
+
+        cfg = SHOPS.get(self.selected_shop)
+        if not cfg:
+            messagebox.showerror("Shop Error", "Selected shop config not found.")
+            return
+
+        # Validate card number length according to shop rules
+        code_raw = self.code.get() or ""
+        digits = "".join(ch for ch in code_raw if ch.isdigit())
+
+        def _validate_for(shop, ds: str):
+            n = len(ds)
+            if shop == "REWE":
+                return (n == 13, ds, n)
+            if shop == "DM":
+                return (n == 24, ds, n)
+            if shop in ("ALDI", "LIDL"):
+                if n == 20:
+                    return (True, ds, n)
+                if n == 38:
+                    # drop first 18 digits to get 20
+                    corrected = ds[18:]
+                    return (True, corrected, n)
+                return (False, ds, n)
+            if shop == "EDEKA":
+                return (n == 16, ds, n)
+            # default: accept if between min/max
+            return (MIN_OCR_DIGITS <= n <= MAX_OCR_DIGITS, ds, n)
+
+        ok, corrected_code, count = _validate_for(self.selected_shop, digits)
+        if not ok:
+            messagebox.showwarning(
+                "Invalid code length",
+                f"Detected {count} digits for {self.selected_shop}. Try again.",
+            )
+            return
+        # If corrected (e.g., ALDI/LIDL 38->20), update the field
+        if corrected_code != digits:
+            self.code.set(corrected_code)
+            digits = corrected_code
+
+        # Ensure browser is started
+        try:
+            driver = self._ensure_driver()
+        except Exception:
+            # try to start browser manually
+            self._manual_open_browser()
+            # mark start button as active if driver available
+            try:
+                self.start_browser_btn.config(style="Selected.TButton")
+            except Exception:
+                pass
+
+        # Now fill the form for the selected shop
+        # call in background so GUI doesn't block
+        threading.Thread(
+            target=self._open_shop,
+            args=(
+                self.selected_shop,
+                cfg["url"],
+                cfg["card_selector"],
+                cfg.get("pin_selector"),
+                cfg.get("iframe_selector"),
+            ),
+            daemon=True,
+        ).start()
 
     # ==================== Camera Control Methods ====================
 
@@ -485,6 +686,68 @@ class VoucherScannerApp:
             # Enable shop buttons
             for btn in self.shop_buttons:
                 btn.state(["!disabled"])
+            # Auto-select shop when unambiguous (except ALDI/LIDL require manual choice)
+            try:
+                # extract digits from code text
+                digits_only = "".join(ch for ch in txt if ch.isdigit())
+                n = len(digits_only)
+                candidates = []
+                if n == 13:
+                    candidates = ["REWE"]
+                elif n == 24:
+                    candidates = ["DM"]
+                elif n == 16:
+                    candidates = ["EDEKA"]
+                elif n == 20 or n == 38:
+                    # ALDI and LIDL both accept 20 (or 38 -> drop first 18)
+                    candidates = ["ALDI", "LIDL"]
+
+                if len(candidates) == 1:
+                    shop_to_select = candidates[0]
+                    # set selection and style
+                    self.selected_shop = shop_to_select
+                    # update previous selection style
+                    try:
+                        prev = getattr(self, "selected_shop_button", None)
+                        if prev and prev._shop_name != shop_to_select:
+                            prev.config(style="TButton")
+                    except Exception:
+                        pass
+                    for b in self.shop_buttons:
+                        try:
+                            if getattr(b, "_shop_name", None) == shop_to_select:
+                                b.config(style="Selected.TButton")
+                                self.selected_shop_button = b
+                            else:
+                                b.config(style="TButton")
+                        except Exception:
+                            pass
+                    self.status.config(
+                        text=f"Auto-selected shop: {shop_to_select}", foreground="green"
+                    )
+                elif len(candidates) > 1:
+                    # ambiguous ALDI/LIDL - require manual choice
+                    # mark both ALDI and LIDL buttons as ambiguous (orange)
+                    try:
+                        for b in self.shop_buttons:
+                            if getattr(b, "_shop_name", None) in ("ALDI", "LIDL"):
+                                b.config(style="Ambiguous.TButton")
+                            else:
+                                b.config(style="TButton")
+                    except Exception:
+                        pass
+                    self.status.config(
+                        text=f"Ambiguous shop (ALDI/LIDL). Please choose.",
+                        foreground="orange",
+                    )
+                else:
+                    # no match
+                    self.status.config(
+                        text=f"Detected {n} digits — no matching shop. Try again.",
+                        foreground="red",
+                    )
+            except Exception:
+                pass
             beep()
         else:
             self.status.config(
@@ -868,7 +1131,12 @@ class VoucherScannerApp:
         def worker():
             try:
                 self._status_async("Opening browser with all shop tabs…", "blue")
-                self._ensure_driver()
+                driver = self._ensure_driver()
+                # if successful, mark start button
+                try:
+                    self.start_browser_btn.config(style="Selected.TButton")
+                except Exception:
+                    pass
             except Exception as e:
                 self._status_async(f"Error opening browser: {e}", "red")
 
@@ -876,7 +1144,11 @@ class VoucherScannerApp:
 
     def _status_async(self, text, color="blue"):
         def _apply():
-            self.status.config(text=text, foreground=color)
+            # keep status to a single concise line to avoid vertical layout shifts
+            txt = text if text is not None else ""
+            if len(txt) > 120:
+                txt = txt[:117] + "..."
+            self.status.config(text=txt, foreground=color)
 
         self.root.after(0, _apply)
 
@@ -918,6 +1190,11 @@ class VoucherScannerApp:
         # Open all shop tabs
         if self._driver is not None:
             self._open_all_shop_tabs()
+            try:
+                # mark start browser button as active
+                self.start_browser_btn.config(style="Selected.TButton")
+            except Exception:
+                pass
 
         return self._driver
 
