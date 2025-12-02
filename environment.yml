@@ -8,3 +8,4 @@ dependencies:
   - pillow
   - pyzbar
   - zbar
+  - python-dotenv

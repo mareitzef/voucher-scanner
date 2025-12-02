@@ -33,11 +33,16 @@ from pytesseract import Output
 import cv2
 import numpy as np
 from PIL import Image, ImageTk
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
 
 # ---- Camera configuration ------------------------------------------------
-IP_x = "192.168.178.46"  # "192.168.1.184"
-CAMERA_SOURCE = os.environ.get("CAMERA_SOURCE", f"https://{IP_x}:8080/video")
+IP_phone = os.getenv("IP_PHONE")
+# IP_phone = "10.60.142.22"
+
+CAMERA_SOURCE = os.environ.get("CAMERA_SOURCE", f"https://{IP_phone}:8080/video")
 
 RES_PHONE_WIDTH = 1280
 RES_PHONE_HEIGHT = 720
